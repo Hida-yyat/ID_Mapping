@@ -1,0 +1,90 @@
+---
+title: "ID_Mapping"
+author: "Tomilola Aderupoko"
+date: "2024-09-16"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(shiny)
+library(biomaRt)
+library(readxl)
+library(writexl)
+```
+
+
+
+```{r eruptions, echo=FALSE}
+ui <- fluidPage(
+  theme = bslib::bs_theme(bootswatch = "darkly"),
+  titlePanel("Find EnsemblID for RefSeqID"),
+  fluidRow(
+    column(width = 12,
+           sidebarPanel(
+             fileInput("file", "Choose Excel File for RefSeqID", accept = c(".xlsx")),
+             tags$hr(),
+             checkboxInput("header", "Header", TRUE),
+             downloadButton("Download", "Download Complete IDs")
+           ),
+           mainPanel(
+             tabsetPanel(
+               tabPanel("Complete IDs", tableOutput("Complete_IDs"))
+             )
+           )
+    )
+  )
+)
+
+server <- function(input, output) {
+  # Function to map RefSeq IDs to Ensembl IDs
+  map_refseq_to_ensembl <- function(refseq_ids) {
+    ensembl <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+    results <- getBM(
+      filters = "refseq_mrna",
+      attributes = c("ensembl_gene_id", "ensembl_transcript_id", "refseq_mrna"),
+      values = refseq_ids,
+      mart = ensembl
+    )
+    return(results)
+  }
+
+  # Reactive expression to load and process the data
+  data_reactive <- reactive({
+    req(input$file)
+    inFile <- input$file
+    Refseq_sample_data <- read_excel(inFile$datapath, col_names = input$header)
+    refseq_ids <- Refseq_sample_data$RefSeq_ID  # Replace with the actual column name in your file
+
+    mapping_results <- map_refseq_to_ensembl(refseq_ids)
+    
+    # Merge mapping results with original data
+    combined_results <- merge(Refseq_sample_data, mapping_results, by.x = "RefSeq_ID", by.y = "refseq_mrna", all.x = TRUE)
+    combined_results
+  })
+
+  # Render the table
+  output$Complete_IDs <- renderTable({
+    req(data_reactive())
+    data_reactive()
+  })
+
+  # Handle file download
+  output$Download <- downloadHandler(
+    filename = function() {
+      paste("Complete_IDs_", Sys.Date(), ".xlsx", sep = "")
+    },
+    content = function(file) {
+      write_xlsx(data_reactive(), file)
+    }
+  )
+}
+
+# Run the application
+shinyApp(ui = ui, server = server)
+```
+
+
+
+
